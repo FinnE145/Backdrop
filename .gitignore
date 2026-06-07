@@ -226,6 +226,7 @@ local/*
 
 # Local config (each machine has its own)
 config.json
+config.fe-home.json
 
 # Vendored model weights
 models/*

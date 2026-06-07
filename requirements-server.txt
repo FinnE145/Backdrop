@@ -1,0 +1,8 @@
+# fe-home — import worker + web app
+flask
+numpy
+Pillow
+pillow-heif
+# CLIP text encoder for web portal queries (needed for step 7, not yet built):
+open_clip_torch
+torch

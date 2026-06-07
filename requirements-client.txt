@@ -1,0 +1,12 @@
+# Mac (primary) and G14 (fallback) ingest clients
+# osxphotos is Mac-only; omit on the G14
+torch
+open_clip_torch
+ultralytics
+Pillow
+pillow-heif
+scikit-image
+scikit-learn
+numpy
+requests
+osxphotos

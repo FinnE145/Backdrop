@@ -132,3 +132,13 @@ def run(conn, config: dict) -> None:
             )
             conn.commit()
             logger.exception("Job %d failed", job_id)
+
+
+if __name__ == "__main__":
+    import json
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    with open("config.json") as f:
+        config = json.load(f)
+    from worker.db import init_db
+    conn = init_db(config)
+    run(conn, config)
