@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/home/finne/Backdrop
+Environment=PYTHONPATH=/home/finne/Backdrop
 ExecStart=/home/finne/Backdrop/.venv/bin/python3 webapp/app.py
 Restart=on-failure
 RestartSec=5
