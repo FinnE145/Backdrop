@@ -1,0 +1,43 @@
+{
+  "paths": {
+    "images_dir": "/path/to/images",
+    "staging_dir": "/path/to/staging",
+    "sqlite_path": "/path/to/backdrop.db",
+    "models_dir": "/path/to/models"
+  },
+  "network": {
+    "host": "100.x.x.x",
+    "port": 5000
+  },
+  "model": {
+    "name": "ViT-L-14-quickgelu",
+    "checkpoint_filename": "clip-vit-large-patch14.pt",
+    "checkpoint_sha256": "2a608fcd10ef4e5fd89e0486432d839c4f8ca8f14380960006c72e7daa87c591",
+    "aesthetic_checkpoint_filename": "sac+logos+ava1-l14-linearMSE.pth",
+    "yolo_model_filename": "yolo11n.pt"
+  },
+  "thresholds": {
+    "aesthetic_floor": 4.85,
+    "aesthetic_browse": 5.1,
+    "yolo_confidence": 0.5,
+    "yolo_bbox_area_fraction": 0.08
+  },
+  "negative_prompts": [
+    { "prompt": "an image of a document", "threshold": 0.25 },
+    { "prompt": "black text on a white background", "threshold": 0.28 },
+    { "prompt": "a screenshot", "threshold": 0.25 },
+    { "prompt": "a sign", "threshold": 0.22 },
+    { "prompt": "a meme", "threshold": 0.23 }
+  ],
+  "colour": {
+    "palette_k": 6,
+    "sample_size": 10000
+  },
+  "target_presets": [
+    { "name": "1080p monitor", "width": 1920, "height": 1080 },
+    { "name": "4K monitor", "width": 3840, "height": 2160 },
+    { "name": "2K laptop", "width": 2560, "height": 1600 },
+    { "name": "iPhone vertical", "width": 1179, "height": 2556 },
+    { "name": "iPad Air vertical", "width": 1640, "height": 2360 }
+  ]
+}

@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS system files
+.DS_Store
+
+# Local scratch folder — test images, sample outputs, throwaway files
+local/*
+!local/.gitkeep
+
+# Local config (each machine has its own)
+config.json
+
+# Vendored model weights
+models/*
+!models/.gitkeep
+
+.vscode
