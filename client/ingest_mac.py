@@ -9,6 +9,8 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 
+import argparse
+
 import osxphotos
 import requests
 
@@ -25,6 +27,10 @@ def hash_file(path: str) -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=None, help="Process at most N photos (for testing)")
+    args = parser.parse_args()
+
     with open("config.json") as f:
         config = json.load(f)
 
@@ -46,6 +52,9 @@ def main():
     photosdb = osxphotos.PhotosDB()
     photos = photosdb.photos()
     print(f"  {len(photos)} photos in library")
+    if args.limit:
+        photos = photos[:args.limit]
+        print(f"  limiting to {args.limit} for this run")
 
     # 3. Process unknowns into a local staging batch
     batch_uuid = str(uuid.uuid4())
@@ -117,7 +126,7 @@ def main():
         rsync_dest = f"{server_user}@{server_host}:{remote_batch}/"
         print(f"\nRsyncing to {rsync_dest} ...")
         subprocess.run(
-            ["rsync", "-avL", "--partial", f"{local_batch_dir}/", rsync_dest],
+            ["/opt/homebrew/bin/rsync", "-avL", "--partial", f"{local_batch_dir}/", rsync_dest],
             check=True,
         )
 
