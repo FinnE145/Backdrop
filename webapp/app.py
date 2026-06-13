@@ -1,6 +1,10 @@
 import json
+import mimetypes
 import os
 from datetime import datetime, timezone
+
+mimetypes.add_type("image/heic", ".heic")
+mimetypes.add_type("image/heic", ".HEIC")
 
 import numpy as np
 from flask import Flask, jsonify, request, send_file
@@ -82,11 +86,13 @@ def create_app(config: dict):
     @app.get("/photos/<hash>")
     def serve_photo(hash):
         row = db.execute(
-            "SELECT stored_path FROM photos WHERE hash=? AND status='kept'", (hash,)
+            "SELECT stored_path, orig_filename FROM photos WHERE hash=? AND status='kept'", (hash,)
         ).fetchone()
         if row is None:
             return jsonify({"error": "not found"}), 404
-        return send_file(row[0])
+        stored_path, orig_filename = row
+        mimetype, _ = mimetypes.guess_type(orig_filename or "")
+        return send_file(stored_path, mimetype=mimetype or "application/octet-stream")
 
     @app.post("/photos/<hash>/delete")
     def delete_photo(hash):
