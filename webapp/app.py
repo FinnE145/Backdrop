@@ -353,7 +353,7 @@ async function doSearch() {
 
         const simBtn = document.createElement('button');
         simBtn.textContent = 'Similar...';
-        simBtn.onclick = () => window.location.href = '/match?hash=' + item.hash;
+        simBtn.onclick = () => window.location.href = '/cleanup?hash=' + item.hash;
 
         wrap.appendChild(img);
         wrap.appendChild(keepBtn);
