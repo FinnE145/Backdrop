@@ -88,6 +88,42 @@ def create_app(config: dict):
             return jsonify({"error": "not found"}), 404
         return send_file(row[0])
 
+    @app.get("/testsearch")
+    def testsearch():
+        return """<!doctype html>
+<html>
+<head><title>Backdrop Test Search</title></head>
+<body>
+<h2>Search</h2>
+<input id="q" type="text" placeholder="e.g. mountain lake" size="40">
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="search()">Search</button>
+<p id="status"></p>
+<div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
+<script>
+async function search() {
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (!q) return;
+    document.getElementById('status').textContent = 'Searching...';
+    document.getElementById('results').innerHTML = '';
+    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
+    const data = await r.json();
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results) {
+        const img = document.createElement('img');
+        img.src = '/photos/' + item.hash;
+        img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
+        img.style = 'height:200px;object-fit:cover;cursor:pointer';
+        img.onclick = () => window.open(img.src);
+        document.getElementById('results').appendChild(img);
+    }
+}
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+</script>
+</body>
+</html>"""
+
     return app, db
 
 
