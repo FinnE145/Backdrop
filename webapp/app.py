@@ -344,15 +344,20 @@ async function doSearch() {
         img.style = 'height:200px;object-fit:cover;cursor:pointer';
         img.onclick = () => window.open(img.src);
 
-        const btn = document.createElement('button');
-        btn.textContent = 'Keep';
-        btn.onclick = () => {
+        const keepBtn = document.createElement('button');
+        keepBtn.textContent = 'Keep';
+        keepBtn.onclick = () => {
             kept.add(item.hash);
             document.getElementById('wrap-' + item.hash).style.display = 'none';
         };
 
+        const simBtn = document.createElement('button');
+        simBtn.textContent = 'Similar...';
+        simBtn.onclick = () => window.location.href = '/match?hash=' + item.hash;
+
         wrap.appendChild(img);
-        wrap.appendChild(btn);
+        wrap.appendChild(keepBtn);
+        wrap.appendChild(simBtn);
         document.getElementById('results').appendChild(wrap);
     }
 }
