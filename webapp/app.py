@@ -158,6 +158,82 @@ document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'E
 </body>
 </html>"""
 
+    @app.get("/cleanup")
+    def cleanup():
+        return """<!doctype html>
+<html>
+<head><title>Backdrop Cleanup</title></head>
+<body>
+<h2>Cleanup</h2>
+<input id="q" type="text" placeholder="e.g. mountain lake" size="40">
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="search()">Search</button>
+<button onclick="deleteAll()">Delete All</button>
+<p id="status"></p>
+<div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
+<script>
+const kept = new Set();
+let currentResults = [];
+
+async function search() {
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (!q) return;
+    document.getElementById('status').textContent = 'Searching...';
+    document.getElementById('results').innerHTML = '';
+    kept.clear();
+    currentResults = [];
+    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
+    const data = await r.json();
+    currentResults = data.results;
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results) {
+        const wrap = document.createElement('div');
+        wrap.style = 'display:flex;flex-direction:column;align-items:center;gap:4px';
+        wrap.id = 'wrap-' + item.hash;
+
+        const img = document.createElement('img');
+        img.src = '/photos/' + item.hash;
+        img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
+        img.style = 'height:200px;object-fit:cover;cursor:pointer';
+        img.onclick = () => window.open(img.src);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Keep';
+        btn.onclick = () => {
+            kept.add(item.hash);
+            document.getElementById('wrap-' + item.hash).style.display = 'none';
+        };
+
+        wrap.appendChild(img);
+        wrap.appendChild(btn);
+        document.getElementById('results').appendChild(wrap);
+    }
+}
+
+async function deleteAll() {
+    const toDelete = currentResults.filter(item => !kept.has(item.hash));
+    if (toDelete.length === 0) { alert('Nothing to delete.'); return; }
+    if (!confirm('Delete ' + toDelete.length + ' photos?')) return;
+    document.getElementById('status').textContent = 'Deleting...';
+    let deleted = 0;
+    for (const item of toDelete) {
+        const res = await fetch('/photos/' + item.hash + '/delete', {method:'POST'});
+        if (res.ok) {
+            const el = document.getElementById('wrap-' + item.hash);
+            if (el) el.remove();
+            deleted++;
+        }
+    }
+    currentResults = currentResults.filter(item => kept.has(item.hash));
+    document.getElementById('status').textContent = 'Deleted ' + deleted + ' photos.';
+}
+
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+</script>
+</body>
+</html>"""
+
     return app, db
 
 
