@@ -77,7 +77,7 @@ def main():
     # 2. Open Photos library
     print("Opening Photos library...")
     photosdb = osxphotos.PhotosDB()
-    photos = photosdb.photos()
+    photos = photosdb.photos(hidden=False)
     print(f"  {len(photos)} photos in library")
     if args.limit:
         photos = photos[:args.limit]

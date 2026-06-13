@@ -88,6 +88,24 @@ def create_app(config: dict):
             return jsonify({"error": "not found"}), 404
         return send_file(row[0])
 
+    @app.post("/photos/<hash>/delete")
+    def delete_photo(hash):
+        row = db.execute(
+            "SELECT stored_path FROM photos WHERE hash=?", (hash,)
+        ).fetchone()
+        if row is None:
+            return jsonify({"error": "not found"}), 404
+        db.execute("DELETE FROM photos WHERE hash=?", (hash,))
+        db.execute(
+            "UPDATE meta SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT) WHERE key='catalog_version'"
+        )
+        db.commit()
+        try:
+            os.remove(row[0])
+        except FileNotFoundError:
+            pass
+        return jsonify({"deleted": hash})
+
     @app.get("/testsearch")
     def testsearch():
         return """<!doctype html>
@@ -111,12 +129,28 @@ async function search() {
     const data = await r.json();
     document.getElementById('status').textContent = data.results.length + ' results';
     for (const item of data.results) {
+        const wrap = document.createElement('div');
+        wrap.style = 'display:flex;flex-direction:column;align-items:center;gap:4px';
+        wrap.id = 'wrap-' + item.hash;
+
         const img = document.createElement('img');
         img.src = '/photos/' + item.hash;
         img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
         img.style = 'height:200px;object-fit:cover;cursor:pointer';
         img.onclick = () => window.open(img.src);
-        document.getElementById('results').appendChild(img);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Remove';
+        btn.onclick = async () => {
+            if (!confirm('Remove ' + (item.orig_filename || item.hash) + '?')) return;
+            const res = await fetch('/photos/' + item.hash + '/delete', {method:'POST'});
+            if (res.ok) document.getElementById('wrap-' + item.hash).remove();
+            else alert('Failed to remove');
+        };
+
+        wrap.appendChild(img);
+        wrap.appendChild(btn);
+        document.getElementById('results').appendChild(wrap);
     }
 }
 document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
