@@ -49,8 +49,18 @@ def create_app(config: dict):
         db.commit()
         return jsonify({"job_id": cur.lastrowid}), 202
 
-    @app.get("/search")
-    def search():
+    def _fetch_names(top_hashes):
+        if not top_hashes:
+            return {}
+        placeholders = ",".join("?" * len(top_hashes))
+        rows = db.execute(
+            f"SELECT hash, orig_filename FROM photos WHERE hash IN ({placeholders})",
+            top_hashes,
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    @app.get("/api/search")
+    def api_search():
         q = request.args.get("q", "").strip()
         if not q:
             return jsonify({"error": "q required"}), 400
@@ -68,13 +78,38 @@ def create_app(config: dict):
         scores = vectors @ query_vec
         top_idx = np.argsort(scores)[::-1][:limit]
         top_hashes = [hashes[i] for i in top_idx]
+        names = _fetch_names(top_hashes)
 
-        placeholders = ",".join("?" * len(top_hashes))
-        name_rows = db.execute(
-            f"SELECT hash, orig_filename FROM photos WHERE hash IN ({placeholders})",
-            top_hashes,
-        ).fetchall()
-        names = {row[0]: row[1] for row in name_rows}
+        return jsonify({
+            "results": [
+                {"hash": hashes[i], "score": float(scores[i]), "orig_filename": names.get(hashes[i])}
+                for i in top_idx
+            ]
+        })
+
+    @app.get("/api/match")
+    def api_match():
+        hash_ = request.args.get("hash", "").strip()
+        if not hash_:
+            return jsonify({"error": "hash required"}), 400
+        limit = min(int(request.args.get("limit", 50)), 200)
+
+        row = db.execute(
+            "SELECT vector FROM photos WHERE hash=? AND status='kept'", (hash_,)
+        ).fetchone()
+        if row is None:
+            return jsonify({"error": "not found"}), 404
+
+        query_vec = np.frombuffer(row[0], dtype=np.float32)
+        vectors, hashes = _ensure_vectors()
+        if vectors.shape[0] == 0:
+            return jsonify({"results": []})
+
+        scores = vectors @ query_vec
+        top_idx = np.argsort(scores)[::-1]
+        top_idx = [i for i in top_idx if hashes[i] != hash_][:limit]
+        top_hashes = [hashes[i] for i in top_idx]
+        names = _fetch_names(top_hashes)
 
         return jsonify({
             "results": [
@@ -112,54 +147,127 @@ def create_app(config: dict):
             pass
         return jsonify({"deleted": hash})
 
-    @app.get("/testsearch")
-    def testsearch():
+    @app.get("/search")
+    def search_page():
         return """<!doctype html>
 <html>
-<head><title>Backdrop Test Search</title></head>
+<head><title>Backdrop Search</title></head>
 <body>
 <h2>Search</h2>
 <input id="q" type="text" placeholder="e.g. mountain lake" size="40">
 <input id="limit" type="number" value="20" min="1" max="200">
-<button onclick="search()">Search</button>
+<button onclick="doSearch()">Search</button>
 <p id="status"></p>
 <div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
 <script>
-async function search() {
+function makeCard(item) {
+    const wrap = document.createElement('div');
+    wrap.style = 'display:flex;flex-direction:column;align-items:center;gap:4px';
+    wrap.id = 'wrap-' + item.hash;
+
+    const img = document.createElement('img');
+    img.src = '/photos/' + item.hash;
+    img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
+    img.style = 'height:200px;object-fit:cover;cursor:pointer';
+    img.onclick = () => window.open(img.src);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Remove';
+    removeBtn.onclick = async () => {
+        if (!confirm('Remove ' + (item.orig_filename || item.hash) + '?')) return;
+        const res = await fetch('/photos/' + item.hash + '/delete', {method:'POST'});
+        if (res.ok) document.getElementById('wrap-' + item.hash).remove();
+        else alert('Failed to remove');
+    };
+
+    const simBtn = document.createElement('button');
+    simBtn.textContent = 'Similar...';
+    simBtn.onclick = () => window.location.href = '/match?hash=' + item.hash;
+
+    wrap.appendChild(img);
+    wrap.appendChild(removeBtn);
+    wrap.appendChild(simBtn);
+    return wrap;
+}
+
+async function doSearch() {
     const q = document.getElementById('q').value.trim();
     const limit = document.getElementById('limit').value;
     if (!q) return;
     document.getElementById('status').textContent = 'Searching...';
     document.getElementById('results').innerHTML = '';
-    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
     const data = await r.json();
     document.getElementById('status').textContent = data.results.length + ' results';
-    for (const item of data.results) {
-        const wrap = document.createElement('div');
-        wrap.style = 'display:flex;flex-direction:column;align-items:center;gap:4px';
-        wrap.id = 'wrap-' + item.hash;
-
-        const img = document.createElement('img');
-        img.src = '/photos/' + item.hash;
-        img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
-        img.style = 'height:200px;object-fit:cover;cursor:pointer';
-        img.onclick = () => window.open(img.src);
-
-        const btn = document.createElement('button');
-        btn.textContent = 'Remove';
-        btn.onclick = async () => {
-            if (!confirm('Remove ' + (item.orig_filename || item.hash) + '?')) return;
-            const res = await fetch('/photos/' + item.hash + '/delete', {method:'POST'});
-            if (res.ok) document.getElementById('wrap-' + item.hash).remove();
-            else alert('Failed to remove');
-        };
-
-        wrap.appendChild(img);
-        wrap.appendChild(btn);
-        document.getElementById('results').appendChild(wrap);
-    }
+    for (const item of data.results)
+        document.getElementById('results').appendChild(makeCard(item));
 }
-document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+</script>
+</body>
+</html>"""
+
+    @app.get("/match")
+    def match_page():
+        return """<!doctype html>
+<html>
+<head><title>Backdrop Match</title></head>
+<body>
+<h2>Find Similar</h2>
+<input id="hash" type="text" placeholder="image hash" size="70">
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="doSearch()">Find Similar</button>
+<p id="status"></p>
+<div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
+<script>
+function makeCard(item) {
+    const wrap = document.createElement('div');
+    wrap.style = 'display:flex;flex-direction:column;align-items:center;gap:4px';
+    wrap.id = 'wrap-' + item.hash;
+
+    const img = document.createElement('img');
+    img.src = '/photos/' + item.hash;
+    img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
+    img.style = 'height:200px;object-fit:cover;cursor:pointer';
+    img.onclick = () => window.open(img.src);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Remove';
+    removeBtn.onclick = async () => {
+        if (!confirm('Remove ' + (item.orig_filename || item.hash) + '?')) return;
+        const res = await fetch('/photos/' + item.hash + '/delete', {method:'POST'});
+        if (res.ok) document.getElementById('wrap-' + item.hash).remove();
+        else alert('Failed to remove');
+    };
+
+    const simBtn = document.createElement('button');
+    simBtn.textContent = 'Similar...';
+    simBtn.onclick = () => window.location.href = '/match?hash=' + item.hash;
+
+    wrap.appendChild(img);
+    wrap.appendChild(removeBtn);
+    wrap.appendChild(simBtn);
+    return wrap;
+}
+
+async function doSearch() {
+    const hash = document.getElementById('hash').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (!hash) return;
+    document.getElementById('status').textContent = 'Searching...';
+    document.getElementById('results').innerHTML = '';
+    const r = await fetch('/api/match?hash=' + encodeURIComponent(hash) + '&limit=' + limit);
+    const data = await r.json();
+    if (data.error) { document.getElementById('status').textContent = 'Error: ' + data.error; return; }
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results)
+        document.getElementById('results').appendChild(makeCard(item));
+}
+
+const params = new URLSearchParams(window.location.search);
+const h = params.get('hash');
+if (h) { document.getElementById('hash').value = h; doSearch(); }
+document.getElementById('hash').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 </script>
 </body>
 </html>"""
@@ -189,7 +297,7 @@ async function search() {
     document.getElementById('results').innerHTML = '';
     kept.clear();
     currentResults = [];
-    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
     const data = await r.json();
     currentResults = data.results;
     document.getElementById('status').textContent = data.results.length + ' results';
