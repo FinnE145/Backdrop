@@ -2,6 +2,8 @@ import json
 import mimetypes
 import os
 import random
+import sqlite3
+import threading
 from datetime import datetime, timezone
 
 mimetypes.add_type("image/heic", ".heic")
@@ -16,21 +18,31 @@ from webapp.text_encoder import encode_text
 
 def create_app(config: dict):
     app = Flask(__name__)
-    db = init_db(config)
+    init_db(config)  # create schema, validate model id
+    db_path = config["paths"]["sqlite_path"]
     cache = {"vectors": None, "hashes": None, "catalog_version": None}
+    _local = threading.local()
+
+    def _conn():
+        if not hasattr(_local, "db"):
+            c = sqlite3.connect(db_path, check_same_thread=False)
+            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("PRAGMA foreign_keys=ON")
+            _local.db = c
+        return _local.db
 
     def _ensure_vectors():
-        version = db.execute(
+        version = _conn().execute(
             "SELECT value FROM meta WHERE key='catalog_version'"
         ).fetchone()[0]
         if version != cache["catalog_version"]:
-            cache["vectors"], cache["hashes"] = load_kept_vectors(db)
+            cache["vectors"], cache["hashes"] = load_kept_vectors(_conn())
             cache["catalog_version"] = version
         return cache["vectors"], cache["hashes"]
 
     @app.get("/index")
     def index():
-        rows = db.execute("SELECT hash, status FROM photos").fetchall()
+        rows = _conn().execute("SELECT hash, status FROM photos").fetchall()
         return jsonify({"hashes": {row[0]: row[1] for row in rows}})
 
     @app.post("/ingest/import")
@@ -40,21 +52,21 @@ def create_app(config: dict):
         if not batch_dir:
             return jsonify({"error": "batch_dir required"}), 400
 
-        cur = db.execute(
+        cur = _conn().execute(
             """
             INSERT INTO jobs (status, batch_dir, source, created_at)
             VALUES ('pending', ?, 'import', ?)
             """,
             (batch_dir, datetime.now(timezone.utc).isoformat()),
         )
-        db.commit()
+        _conn().commit()
         return jsonify({"job_id": cur.lastrowid}), 202
 
     def _fetch_names(top_hashes):
         if not top_hashes:
             return {}
         placeholders = ",".join("?" * len(top_hashes))
-        rows = db.execute(
+        rows = _conn().execute(
             f"SELECT hash, orig_filename FROM photos WHERE hash IN ({placeholders})",
             top_hashes,
         ).fetchall()
@@ -95,7 +107,7 @@ def create_app(config: dict):
             return jsonify({"error": "hash required"}), 400
         limit = min(int(request.args.get("limit", 50)), 200)
 
-        row = db.execute(
+        row = _conn().execute(
             "SELECT vector FROM photos WHERE hash=? AND status='kept'", (hash_,)
         ).fetchone()
         if row is None:
@@ -124,7 +136,7 @@ def create_app(config: dict):
         limit = min(int(request.args.get("limit", 20)), 200)
         alpha = float(config.get("browse", {}).get("power", 1.5))
 
-        rows = db.execute(
+        rows = _conn().execute(
             "SELECT hash, orig_filename, aesthetic_score FROM photos WHERE status='kept' AND aesthetic_score IS NOT NULL"
         ).fetchall()
         if not rows:
@@ -164,7 +176,7 @@ def create_app(config: dict):
 
     @app.get("/photos/<hash>")
     def serve_photo(hash):
-        row = db.execute(
+        row = _conn().execute(
             "SELECT stored_path, orig_filename FROM photos WHERE hash=? AND status='kept'", (hash,)
         ).fetchone()
         if row is None:
@@ -175,16 +187,16 @@ def create_app(config: dict):
 
     @app.post("/photos/<hash>/delete")
     def delete_photo(hash):
-        row = db.execute(
+        row = _conn().execute(
             "SELECT stored_path FROM photos WHERE hash=?", (hash,)
         ).fetchone()
         if row is None:
             return jsonify({"error": "not found"}), 404
-        db.execute("DELETE FROM photos WHERE hash=?", (hash,))
-        db.execute(
+        _conn().execute("DELETE FROM photos WHERE hash=?", (hash,))
+        _conn().execute(
             "UPDATE meta SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT) WHERE key='catalog_version'"
         )
-        db.commit()
+        _conn().commit()
         try:
             os.remove(row[0])
         except FileNotFoundError:
@@ -514,11 +526,11 @@ if (initHash || initQ) doSearch();
 </body>
 </html>"""
 
-    return app, db
+    return app
 
 
 if __name__ == "__main__":
     with open("config.json") as f:
         config = json.load(f)
-    app, _ = create_app(config)
+    app = create_app(config)
     app.run(host=config["network"]["host"], port=config["network"]["port"])

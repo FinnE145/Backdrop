@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sqlite3
 import tempfile
 from unittest.mock import patch
 
@@ -15,8 +16,9 @@ tmp = tempfile.mkdtemp()
 config["paths"]["sqlite_path"] = os.path.join(tmp, "test.db")
 
 try:
-    app, db = create_app(config)
+    app = create_app(config)
     client = app.test_client()
+    db = sqlite3.connect(config["paths"]["sqlite_path"])
 
     # --- GET /index on empty DB ---
     r = client.get("/index")
