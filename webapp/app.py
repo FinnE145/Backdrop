@@ -157,6 +157,7 @@ def create_app(config: dict):
 <input id="q" type="text" placeholder="e.g. mountain lake" size="40">
 <input id="limit" type="number" value="20" min="1" max="200">
 <button onclick="doSearch()">Search</button>
+<button onclick="toCleanup()">Switch to Cleanup Mode</button>
 <p id="status"></p>
 <div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
 <script>
@@ -202,6 +203,13 @@ async function doSearch() {
     for (const item of data.results)
         document.getElementById('results').appendChild(makeCard(item));
 }
+
+function toCleanup() {
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    window.location.href = '/cleanup?q=' + encodeURIComponent(q) + '&limit=' + limit;
+}
+
 document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 </script>
 </body>
@@ -217,6 +225,7 @@ document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'E
 <input id="hash" type="text" placeholder="image hash" size="70">
 <input id="limit" type="number" value="20" min="1" max="200">
 <button onclick="doSearch()">Find Similar</button>
+<button onclick="toCleanup()">Switch to Cleanup Mode</button>
 <p id="status"></p>
 <div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
 <script>
@@ -264,6 +273,12 @@ async function doSearch() {
         document.getElementById('results').appendChild(makeCard(item));
 }
 
+function toCleanup() {
+    const hash = document.getElementById('hash').value.trim();
+    const limit = document.getElementById('limit').value;
+    window.location.href = '/cleanup?hash=' + encodeURIComponent(hash) + '&limit=' + limit;
+}
+
 const params = new URLSearchParams(window.location.search);
 const h = params.get('hash');
 if (h) { document.getElementById('hash').value = h; doSearch(); }
@@ -280,8 +295,9 @@ document.getElementById('hash').addEventListener('keydown', e => { if (e.key ===
 <body>
 <h2>Cleanup</h2>
 <input id="q" type="text" placeholder="e.g. mountain lake" size="40">
+<input id="hash-input" type="text" placeholder="image hash" size="70" style="display:none">
 <input id="limit" type="number" value="20" min="1" max="200">
-<button onclick="search()">Search</button>
+<button onclick="doSearch()">Search</button>
 <button onclick="deleteAll()">Delete All</button>
 <p id="status"></p>
 <div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
@@ -289,16 +305,32 @@ document.getElementById('hash').addEventListener('keydown', e => { if (e.key ===
 const kept = new Set();
 let currentResults = [];
 
-async function search() {
+const params = new URLSearchParams(window.location.search);
+const initHash = params.get('hash');
+const initQ = params.get('q');
+if (params.get('limit')) document.getElementById('limit').value = params.get('limit');
+if (initHash) {
+    document.getElementById('q').style.display = 'none';
+    document.getElementById('hash-input').style.display = '';
+    document.getElementById('hash-input').value = initHash;
+} else if (initQ) {
+    document.getElementById('q').value = initQ;
+}
+
+async function doSearch() {
+    const hash = document.getElementById('hash-input').value.trim();
     const q = document.getElementById('q').value.trim();
     const limit = document.getElementById('limit').value;
-    if (!q) return;
+    if (!hash && !q) return;
+    const url = hash ? '/api/match?hash=' + encodeURIComponent(hash) + '&limit=' + limit
+                     : '/api/search?q=' + encodeURIComponent(q) + '&limit=' + limit;
     document.getElementById('status').textContent = 'Searching...';
     document.getElementById('results').innerHTML = '';
     kept.clear();
     currentResults = [];
-    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
+    const r = await fetch(url);
     const data = await r.json();
+    if (data.error) { document.getElementById('status').textContent = 'Error: ' + data.error; return; }
     currentResults = data.results;
     document.getElementById('status').textContent = data.results.length + ' results';
     for (const item of data.results) {
@@ -343,7 +375,9 @@ async function deleteAll() {
     document.getElementById('status').textContent = 'Deleted ' + deleted + ' photos.';
 }
 
-document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+document.getElementById('hash-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+if (initHash || initQ) doSearch();
 </script>
 </body>
 </html>"""
