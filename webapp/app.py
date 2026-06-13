@@ -10,7 +10,11 @@ mimetypes.add_type("image/heic", ".heic")
 mimetypes.add_type("image/heic", ".HEIC")
 
 import numpy as np
+import pillow_heif
 from flask import Flask, jsonify, request, send_file
+from PIL import Image, ImageOps
+
+pillow_heif.register_heif_opener()
 
 from worker.db import init_db, load_kept_vectors
 from webapp.text_encoder import encode_text
@@ -182,6 +186,19 @@ def create_app(config: dict):
         if row is None:
             return jsonify({"error": "not found"}), 404
         stored_path, orig_filename = row
+
+        if request.args.get("thumbnail"):
+            thumb_dir = config["paths"]["thumbnail_dir"]
+            thumb_path = os.path.join(thumb_dir, hash + ".jpg")
+            if not os.path.exists(thumb_path):
+                os.makedirs(thumb_dir, exist_ok=True)
+                img = ImageOps.exif_transpose(Image.open(stored_path))
+                w, h = img.size
+                if h > 400:
+                    img = img.resize((int(w * 400 / h), 400), Image.LANCZOS)
+                img.convert("RGB").save(thumb_path, "JPEG", quality=85)
+            return send_file(thumb_path, mimetype="image/jpeg")
+
         mimetype, _ = mimetypes.guess_type(orig_filename or "")
         return send_file(stored_path, mimetype=mimetype or "application/octet-stream")
 
@@ -221,10 +238,10 @@ function makeCard(item) {
     wrap.id = 'wrap-' + item.hash;
 
     const img = document.createElement('img');
-    img.src = '/photos/' + item.hash;
+    img.src = '/photos/' + item.hash + '?thumbnail=1';
     img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
     img.style = 'height:200px;object-fit:cover;cursor:pointer';
-    img.onclick = () => window.open(img.src);
+    img.onclick = () => window.open('/photos/' + item.hash);
 
     const removeBtn = document.createElement('button');
     removeBtn.textContent = 'Remove';
@@ -281,10 +298,10 @@ function makeCard(item) {
     wrap.id = 'wrap-' + item.hash;
 
     const img = document.createElement('img');
-    img.src = '/photos/' + item.hash;
+    img.src = '/photos/' + item.hash + '?thumbnail=1';
     img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
     img.style = 'height:200px;object-fit:cover;cursor:pointer';
-    img.onclick = () => window.open(img.src);
+    img.onclick = () => window.open('/photos/' + item.hash);
 
     const removeBtn = document.createElement('button');
     removeBtn.textContent = 'Remove';
@@ -353,10 +370,10 @@ function makeCard(item) {
     wrap.id = 'wrap-' + item.hash;
 
     const img = document.createElement('img');
-    img.src = '/photos/' + item.hash;
+    img.src = '/photos/' + item.hash + '?thumbnail=1';
     img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
     img.style = 'height:200px;object-fit:cover;cursor:pointer';
-    img.onclick = () => window.open(img.src);
+    img.onclick = () => window.open('/photos/' + item.hash);
 
     const removeBtn = document.createElement('button');
     removeBtn.textContent = 'Remove';
@@ -470,10 +487,10 @@ async function doSearch() {
         wrap.id = 'wrap-' + item.hash;
 
         const img = document.createElement('img');
-        img.src = '/photos/' + item.hash;
+        img.src = '/photos/' + item.hash + '?thumbnail=1';
         img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
         img.style = 'height:200px;object-fit:cover;cursor:pointer';
-        img.onclick = () => window.open(img.src);
+        img.onclick = () => window.open('/photos/' + item.hash);
 
         const keepBtn = document.createElement('button');
         keepBtn.textContent = 'Keep';

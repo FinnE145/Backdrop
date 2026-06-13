@@ -3,7 +3,8 @@
     "images_dir": "/path/to/images",
     "staging_dir": "/path/to/staging",
     "sqlite_path": "/path/to/backdrop.db",
-    "models_dir": "/path/to/models"
+    "models_dir": "/path/to/models",
+    "thumbnail_dir": "/path/to/thumbnails"
   },
   "network": {
     "host": "100.x.x.x",
