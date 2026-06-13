@@ -85,7 +85,7 @@ def init_db(config: dict) -> sqlite3.Connection:
 
 def load_kept_vectors(conn: sqlite3.Connection) -> tuple[np.ndarray, list[str]]:
     rows = conn.execute(
-        "SELECT hash, vector FROM photos WHERE status='kept'"
+        "SELECT hash, vector FROM photos WHERE status='kept' AND vector IS NOT NULL"
     ).fetchall()
 
     if not rows:

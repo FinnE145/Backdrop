@@ -2,6 +2,9 @@ import json
 import os
 import shutil
 import tempfile
+from unittest.mock import patch
+
+import numpy as np
 
 from webapp.app import create_app
 
@@ -52,6 +55,52 @@ try:
     r = client.post("/ingest/import", json={})
     assert r.status_code == 400, f"Expected 400, got {r.status_code}"
     print("POST /ingest/import (missing batch_dir) OK")
+
+    # --- GET /search missing q ---
+    r = client.get("/search")
+    assert r.status_code == 400, f"Expected 400, got {r.status_code}"
+    print("GET /search (missing q) OK")
+
+    # --- GET /search on empty library ---
+    vec = np.ones(768, dtype=np.float32)
+    vec /= np.linalg.norm(vec)
+    with patch("webapp.app.encode_text", return_value=vec):
+        r = client.get("/search?q=mountain+lake")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data == {"results": []}, f"Expected empty results, got {data}"
+    print("GET /search (empty library) OK")
+
+    # --- GET /search with results ---
+    # Insert two photos with known vectors; query vector matches vec1 exactly.
+    vec1 = np.zeros(768, dtype=np.float32); vec1[0] = 1.0
+    vec2 = np.zeros(768, dtype=np.float32); vec2[1] = 1.0
+    db.execute(
+        "INSERT INTO photos (hash, status, vector) VALUES ('img1', 'kept', ?)", (vec1.tobytes(),)
+    )
+    db.execute(
+        "INSERT INTO photos (hash, status, vector) VALUES ('img2', 'kept', ?)", (vec2.tobytes(),)
+    )
+    db.execute("UPDATE meta SET value='1' WHERE key='catalog_version'")
+    db.commit()
+
+    with patch("webapp.app.encode_text", return_value=vec1):
+        r = client.get("/search?q=forest")
+    assert r.status_code == 200
+    data = r.get_json()
+    results = data["results"]
+    assert len(results) == 2, f"Expected 2 results, got {len(results)}"
+    assert results[0]["hash"] == "img1", f"Expected img1 first, got {results[0]['hash']}"
+    assert abs(results[0]["score"] - 1.0) < 1e-5, f"Unexpected score: {results[0]['score']}"
+    assert results[1]["hash"] == "img2"
+    assert abs(results[1]["score"]) < 1e-5
+    print(f"GET /search OK — img1 score={results[0]['score']:.4f}, img2 score={results[1]['score']:.4f}")
+
+    # --- limit param ---
+    with patch("webapp.app.encode_text", return_value=vec1):
+        r = client.get("/search?q=forest&limit=1")
+    assert len(r.get_json()["results"]) == 1
+    print("GET /search (limit=1) OK")
 
     print("\nAll webapp tests passed.")
 
