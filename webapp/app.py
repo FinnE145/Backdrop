@@ -299,6 +299,7 @@ document.getElementById('hash').addEventListener('keydown', e => { if (e.key ===
 <input id="limit" type="number" value="20" min="1" max="200">
 <button onclick="doSearch()">Search</button>
 <button onclick="deleteAll()">Delete All</button>
+<button onclick="toView()">Switch to View Mode</button>
 <p id="status"></p>
 <div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
 <script>
@@ -378,6 +379,14 @@ async function deleteAll() {
     }
     currentResults = currentResults.filter(item => kept.has(item.hash));
     document.getElementById('status').textContent = 'Deleted ' + deleted + ' photos.';
+}
+
+function toView() {
+    const hash = document.getElementById('hash-input').value.trim();
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (hash) window.location.href = '/match?hash=' + encodeURIComponent(hash) + '&limit=' + limit;
+    else window.location.href = '/search?q=' + encodeURIComponent(q) + '&limit=' + limit;
 }
 
 document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
