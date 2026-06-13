@@ -1,21 +1,21 @@
 """Mac ingest client — exports from iCloud Photos, runs the pipeline, ships to server."""
 
+import argparse
 import hashlib
 import json
 import os
 import shutil
 import subprocess
-import tempfile
 import uuid
 from datetime import datetime, timezone
-
-import argparse
 
 import osxphotos
 import requests
 
 from pipeline.processor import process_image
-from worker.manifest import write_record
+from worker.manifest import read_manifest, write_record
+
+BATCH_DIR = "local/current_batch"
 
 
 def hash_file(path: str) -> str:
@@ -24,6 +24,32 @@ def hash_file(path: str) -> str:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def load_checkpoint() -> tuple[set, str]:
+    """Returns (already_processed_hashes, batch_uuid) from a previous partial run."""
+    uuid_path = os.path.join(BATCH_DIR, ".batch_uuid")
+    manifest_path = os.path.join(BATCH_DIR, "manifest.jsonl")
+
+    # Generate a fresh UUID unless we're resuming
+    if os.path.exists(uuid_path):
+        with open(uuid_path) as f:
+            batch_uuid = f.read().strip()
+    else:
+        batch_uuid = str(uuid.uuid4())
+
+    hashes = set()
+    if os.path.exists(manifest_path):
+        try:
+            for record in read_manifest(manifest_path):
+                hashes.add(record["hash"])
+        except Exception as e:
+            print(f"  Warning: could not read checkpoint ({e}), starting fresh")
+            hashes = set()
+        if hashes:
+            print(f"  Resuming from checkpoint: {len(hashes)} already processed")
+
+    return hashes, batch_uuid
 
 
 def main():
@@ -37,6 +63,7 @@ def main():
     server_host = config["network"]["host"]
     server_port = config["network"]["port"]
     server_user = config["network"]["server_user"]
+    rsync_host = config["network"].get("rsync_host", server_host)
     staging_dir = config["paths"]["staging_dir"]
     base_url = f"http://{server_host}:{server_port}"
 
@@ -56,40 +83,56 @@ def main():
         photos = photos[:args.limit]
         print(f"  limiting to {args.limit} for this run")
 
-    # 3. Process unknowns into a local staging batch
-    batch_uuid = str(uuid.uuid4())
-    local_batch_dir = tempfile.mkdtemp(prefix="backdrop_")
-    manifest_path = os.path.join(local_batch_dir, "manifest.jsonl")
+    # 3. Set up persistent batch dir — survives crashes so progress is not lost
+    os.makedirs(BATCH_DIR, exist_ok=True)
+    checkpoint_hashes, batch_uuid = load_checkpoint()
+
+    uuid_path = os.path.join(BATCH_DIR, ".batch_uuid")
+    if not os.path.exists(uuid_path):
+        with open(uuid_path, "w") as f:
+            f.write(batch_uuid)
+
+    manifest_path = os.path.join(BATCH_DIR, "manifest.jsonl")
 
     kept = 0
     rejected = 0
     skipped = 0
     ingest_date = datetime.now(timezone.utc).isoformat()
 
-    try:
-        with open(manifest_path, "w") as manifest_f:
-            for photo in photos:
-                path = photo.path
-                if not path or not os.path.exists(path):
-                    # Original not downloaded locally — skip silently
-                    skipped += 1
-                    continue
+    # Append to manifest so a restart picks up where we left off
+    with open(manifest_path, "a") as manifest_f:
+        for photo in photos:
+            path = photo.path
+            if not path or not os.path.exists(path):
+                skipped += 1
+                continue
 
+            try:
                 file_hash = hash_file(path)
+            except Exception as e:
+                print(f"  {photo.original_filename} ... skipped (hash error: {e})")
+                skipped += 1
+                continue
 
-                if file_hash in known_hashes:
-                    skipped += 1
-                    continue
+            if file_hash in known_hashes or file_hash in checkpoint_hashes:
+                skipped += 1
+                continue
 
-                print(f"  {photo.original_filename} ...", end=" ", flush=True)
+            # Add to checkpoint set immediately so a crash mid-photo doesn't
+            # leave a partial record that gets re-processed on restart
+            checkpoint_hashes.add(file_hash)
+
+            print(f"  {photo.original_filename} ...", end=" ", flush=True)
+
+            try:
                 result = process_image(path, config)
 
                 record = {"hash": file_hash, "ingest_date": ingest_date}
 
                 if result.kept:
-                    # Symlink the original into the batch dir named by hash.
-                    # rsync -L dereferences it so the server receives the full file.
-                    os.symlink(os.path.abspath(path), os.path.join(local_batch_dir, file_hash))
+                    link_path = os.path.join(BATCH_DIR, file_hash)
+                    if not os.path.exists(link_path):
+                        os.symlink(os.path.abspath(path), link_path)
                     record.update({
                         "status": "kept",
                         "orig_filename": photo.original_filename,
@@ -114,31 +157,56 @@ def main():
                     print(f"rejected ({result.reject_reason})")
 
                 write_record(manifest_f, record)
+                manifest_f.flush()
 
-        if kept == 0 and rejected == 0:
-            print("\nNothing new to process.")
-            return
+            except Exception as e:
+                print(f"error ({e})")
+                write_record(manifest_f, {
+                    "hash": file_hash,
+                    "status": "rejected",
+                    "reject_reason": "decode_error",
+                    "ingest_date": ingest_date,
+                })
+                manifest_f.flush()
+                rejected += 1
 
-        print(f"\nResults: {kept} kept, {rejected} rejected, {skipped} skipped")
+    total_processed = kept + rejected
+    if total_processed == 0 and not checkpoint_hashes:
+        print("\nNothing new to process.")
+        return
 
-        # 4. rsync batch dir to server staging (dereference symlinks with -L)
-        remote_batch = f"{staging_dir}/{batch_uuid}"
-        rsync_dest = f"{server_user}@{server_host}:{remote_batch}/"
-        print(f"\nRsyncing to {rsync_dest} ...")
-        subprocess.run(
-            ["/opt/homebrew/bin/rsync", "-avL", "--partial", f"{local_batch_dir}/", rsync_dest],
-            check=True,
-        )
+    if total_processed == 0:
+        print(f"\nNo new photos this run (checkpoint has {len(checkpoint_hashes)} already processed).")
+    else:
+        print(f"\nResults this run: {kept} kept, {rejected} rejected, {skipped} skipped")
 
-        # 5. Trigger import — server queues the job, worker picks it up
-        print("Triggering import...")
-        r = requests.post(f"{base_url}/ingest/import", json={"batch_dir": remote_batch})
-        r.raise_for_status()
-        job_id = r.json()["job_id"]
-        print(f"Import job queued (job_id={job_id}). Worker will process in the background.")
+    # Count total kept in the full batch (including checkpoint)
+    total_kept = sum(
+        1 for record in read_manifest(manifest_path) if record.get("status") == "kept"
+    )
+    if total_kept == 0 and total_processed == 0:
+        print("Nothing to send.")
+        shutil.rmtree(BATCH_DIR, ignore_errors=True)
+        return
 
-    finally:
-        shutil.rmtree(local_batch_dir, ignore_errors=True)
+    # 4. rsync full batch dir to server (dereference symlinks with -L)
+    remote_batch = f"{staging_dir}/{batch_uuid}"
+    rsync_dest = f"{server_user}@{rsync_host}:{remote_batch}/"
+    print(f"\nRsyncing to {rsync_dest} ...")
+    subprocess.run(
+        ["/opt/homebrew/bin/rsync", "-avL", "--partial", f"{BATCH_DIR}/", rsync_dest],
+        check=True,
+    )
+
+    # 5. Trigger import and clean up only on success
+    print("Triggering import...")
+    r = requests.post(f"{base_url}/ingest/import", json={"batch_dir": remote_batch})
+    r.raise_for_status()
+    job_id = r.json()["job_id"]
+    print(f"Import job queued (job_id={job_id}). Worker will process in the background.")
+
+    shutil.rmtree(BATCH_DIR, ignore_errors=True)
+    print("Checkpoint cleared.")
 
 
 if __name__ == "__main__":

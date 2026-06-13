@@ -8,7 +8,8 @@
   "network": {
     "host": "100.x.x.x",
     "port": 5000,
-    "server_user": "your_username"
+    "server_user": "your_username",
+    "rsync_host": "your_ssh_alias_or_ip"
   },
   "model": {
     "name": "ViT-L-14-quickgelu",
