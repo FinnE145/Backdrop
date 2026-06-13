@@ -31,6 +31,9 @@
     { "prompt": "a sign", "threshold": 0.22 },
     { "prompt": "a meme", "threshold": 0.23 }
   ],
+  "browse": {
+    "power": 1.5
+  },
   "colour": {
     "palette_k": 6,
     "sample_size": 10000

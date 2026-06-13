@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+import random
 from datetime import datetime, timezone
 
 mimetypes.add_type("image/heic", ".heic")
@@ -118,6 +119,49 @@ def create_app(config: dict):
             ]
         })
 
+    @app.get("/api/browse")
+    def api_browse():
+        limit = min(int(request.args.get("limit", 20)), 200)
+        alpha = float(config.get("browse", {}).get("power", 1.5))
+
+        rows = db.execute(
+            "SELECT hash, orig_filename, aesthetic_score FROM photos WHERE status='kept' AND aesthetic_score IS NOT NULL"
+        ).fetchall()
+        if not rows:
+            return jsonify({"results": []})
+
+        hashes = [r[0] for r in rows]
+        names = {r[0]: r[1] for r in rows}
+        scores = [r[2] for r in rows]
+
+        min_s = min(scores)
+        max_s = max(scores)
+        span = max_s - min_s if max_s > min_s else 1.0
+        weights = [((s - min_s) / span) ** alpha for s in scores]
+
+        n = min(limit, len(rows))
+        chosen = random.choices(range(len(rows)), weights=weights, k=n * 10)
+        seen = set()
+        picked = []
+        for idx in chosen:
+            if idx not in seen:
+                seen.add(idx)
+                picked.append(idx)
+            if len(picked) == n:
+                break
+        if len(picked) < n:
+            remaining = [i for i in range(len(rows)) if i not in seen]
+            picked.extend(remaining[:n - len(picked)])
+
+        picked.sort(key=lambda i: scores[i], reverse=True)
+
+        return jsonify({
+            "results": [
+                {"hash": hashes[i], "score": float(scores[i]), "orig_filename": names.get(hashes[i])}
+                for i in picked
+            ]
+        })
+
     @app.get("/photos/<hash>")
     def serve_photo(hash):
         row = db.execute(
@@ -146,6 +190,64 @@ def create_app(config: dict):
         except FileNotFoundError:
             pass
         return jsonify({"deleted": hash})
+
+    @app.get("/browse")
+    def browse_page():
+        return """<!doctype html>
+<html>
+<head><title>Backdrop Browse</title></head>
+<body>
+<h2>Browse</h2>
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="doBrowse()">Regenerate</button>
+<p id="status"></p>
+<div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
+<script>
+function makeCard(item) {
+    const wrap = document.createElement('div');
+    wrap.style = 'display:flex;flex-direction:column;align-items:center;gap:4px';
+    wrap.id = 'wrap-' + item.hash;
+
+    const img = document.createElement('img');
+    img.src = '/photos/' + item.hash;
+    img.title = (item.orig_filename || item.hash) + ' (' + item.score.toFixed(3) + ')';
+    img.style = 'height:200px;object-fit:cover;cursor:pointer';
+    img.onclick = () => window.open(img.src);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Remove';
+    removeBtn.onclick = async () => {
+        if (!confirm('Remove ' + (item.orig_filename || item.hash) + '?')) return;
+        const res = await fetch('/photos/' + item.hash + '/delete', {method:'POST'});
+        if (res.ok) document.getElementById('wrap-' + item.hash).remove();
+        else alert('Failed to remove');
+    };
+
+    const simBtn = document.createElement('button');
+    simBtn.textContent = 'Similar...';
+    simBtn.onclick = () => window.location.href = '/match?hash=' + item.hash;
+
+    wrap.appendChild(img);
+    wrap.appendChild(removeBtn);
+    wrap.appendChild(simBtn);
+    return wrap;
+}
+
+async function doBrowse() {
+    const limit = document.getElementById('limit').value;
+    document.getElementById('status').textContent = 'Loading...';
+    document.getElementById('results').innerHTML = '';
+    const r = await fetch('/api/browse?limit=' + limit);
+    const data = await r.json();
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results)
+        document.getElementById('results').appendChild(makeCard(item));
+}
+
+doBrowse();
+</script>
+</body>
+</html>"""
 
     @app.get("/search")
     def search_page():
