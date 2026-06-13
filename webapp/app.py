@@ -263,11 +263,23 @@ async function doSearch() {
     const hash = document.getElementById('hash').value.trim();
     const limit = document.getElementById('limit').value;
     if (!hash) return;
+    if (hash.length < 15 || hash.includes(' ')) {
+        window.location.href = '/search?q=' + encodeURIComponent(hash) + '&limit=' + limit;
+        return;
+    }
     document.getElementById('status').textContent = 'Searching...';
     document.getElementById('results').innerHTML = '';
     const r = await fetch('/api/match?hash=' + encodeURIComponent(hash) + '&limit=' + limit);
     const data = await r.json();
-    if (data.error) { document.getElementById('status').textContent = 'Error: ' + data.error; return; }
+    if (data.error) {
+        const a = document.createElement('a');
+        a.href = '/search?q=' + encodeURIComponent(hash) + '&limit=' + limit;
+        a.textContent = 'search instead...';
+        const status = document.getElementById('status');
+        status.textContent = 'Not found. ';
+        status.appendChild(a);
+        return;
+    }
     document.getElementById('status').textContent = data.results.length + ' results';
     for (const item of data.results)
         document.getElementById('results').appendChild(makeCard(item));
