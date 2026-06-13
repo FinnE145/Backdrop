@@ -210,6 +210,10 @@ function toCleanup() {
     window.location.href = '/cleanup?q=' + encodeURIComponent(q) + '&limit=' + limit;
 }
 
+const params = new URLSearchParams(window.location.search);
+const initQ = params.get('q');
+if (initQ) { document.getElementById('q').value = initQ; doSearch(); }
+if (params.get('limit')) document.getElementById('limit').value = params.get('limit');
 document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 </script>
 </body>
