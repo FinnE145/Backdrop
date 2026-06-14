@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Backdrop — Cleanup{% endblock %}
+{% block heading %}Cleanup{% endblock %}
+
+{% block controls %}
+<input id="q" type="text" placeholder="e.g. mountain lake" size="40">
+<input id="hash-input" type="text" placeholder="image hash" size="70" style="display:none">
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="doSearch()">Search</button>
+<button onclick="deleteAll()">Delete All</button>
+<button onclick="toView()">Switch to View Mode</button>
+{% endblock %}
+
+{% block card_buttons %}
+    const keepBtn = document.createElement('button');
+    keepBtn.textContent = 'Keep';
+    keepBtn.onclick = () => {
+        kept.add(item.hash);
+        document.getElementById('wrap-' + item.hash).style.display = 'none';
+    };
+    wrap.appendChild(keepBtn);
+
+    const simBtn = document.createElement('button');
+    simBtn.textContent = 'Similar...';
+    simBtn.onclick = () => window.location.href = '/cleanup?hash=' + item.hash;
+    wrap.appendChild(simBtn);
+{% endblock %}
+
+{% block page_scripts %}
+const kept = new Set();
+let currentResults = [];
+
+const params = new URLSearchParams(window.location.search);
+const initHash = params.get('hash');
+const initQ = params.get('q');
+if (params.get('limit')) document.getElementById('limit').value = params.get('limit');
+if (initHash) {
+    document.getElementById('q').style.display = 'none';
+    document.getElementById('hash-input').style.display = '';
+    document.getElementById('hash-input').value = initHash;
+} else if (initQ) {
+    document.getElementById('q').value = initQ;
+}
+
+async function doSearch() {
+    const hash = document.getElementById('hash-input').value.trim();
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (!hash && !q) return;
+    const url = hash ? '/api/match?hash=' + encodeURIComponent(hash) + '&limit=' + limit
+                     : '/api/search?q=' + encodeURIComponent(q) + '&limit=' + limit;
+    document.getElementById('status').textContent = 'Searching...';
+    document.getElementById('results').innerHTML = '';
+    kept.clear();
+    currentResults = [];
+    const r = await fetch(url);
+    const data = await r.json();
+    if (data.error) { document.getElementById('status').textContent = 'Error: ' + data.error; return; }
+    currentResults = data.results;
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results)
+        document.getElementById('results').appendChild(makeCard(item));
+}
+
+async function deleteAll() {
+    const toDelete = currentResults.filter(item => !kept.has(item.hash));
+    if (toDelete.length === 0) { alert('Nothing to delete.'); return; }
+    if (!confirm('Delete ' + toDelete.length + ' photos?')) return;
+    document.getElementById('status').textContent = 'Deleting...';
+    let deleted = 0;
+    for (const item of toDelete) {
+        const res = await fetch('/photos/' + item.hash + '/delete', {method:'POST'});
+        if (res.ok) {
+            const el = document.getElementById('wrap-' + item.hash);
+            if (el) el.remove();
+            deleted++;
+        }
+    }
+    currentResults = currentResults.filter(item => kept.has(item.hash));
+    document.getElementById('status').textContent = 'Deleted ' + deleted + ' photos.';
+}
+
+function toView() {
+    const hash = document.getElementById('hash-input').value.trim();
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (hash) window.location.href = '/match?hash=' + encodeURIComponent(hash) + '&limit=' + limit;
+    else window.location.href = '/search?q=' + encodeURIComponent(q) + '&limit=' + limit;
+}
+
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+document.getElementById('hash-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+if (initHash || initQ) doSearch();
+{% endblock %}

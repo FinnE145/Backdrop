@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Backdrop — Browse{% endblock %}
+{% block heading %}Browse{% endblock %}
+
+{% block controls %}
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="doBrowse()">Regenerate</button>
+{% endblock %}
+
+{% block page_scripts %}
+async function doBrowse() {
+    const limit = document.getElementById('limit').value;
+    document.getElementById('status').textContent = 'Loading...';
+    document.getElementById('results').innerHTML = '';
+    const r = await fetch('/api/browse?limit=' + limit);
+    const data = await r.json();
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results)
+        document.getElementById('results').appendChild(makeCard(item));
+}
+
+doBrowse();
+{% endblock %}

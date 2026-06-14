@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Backdrop — Search{% endblock %}
+{% block heading %}Search{% endblock %}
+
+{% block controls %}
+<input id="q" type="text" placeholder="e.g. mountain lake" size="40">
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="doSearch()">Search</button>
+<button onclick="toCleanup()">Switch to Cleanup Mode</button>
+{% endblock %}
+
+{% block page_scripts %}
+async function doSearch() {
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (!q) return;
+    document.getElementById('status').textContent = 'Searching...';
+    document.getElementById('results').innerHTML = '';
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
+    const data = await r.json();
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results)
+        document.getElementById('results').appendChild(makeCard(item));
+}
+
+function toCleanup() {
+    const q = document.getElementById('q').value.trim();
+    const limit = document.getElementById('limit').value;
+    window.location.href = '/cleanup?q=' + encodeURIComponent(q) + '&limit=' + limit;
+}
+
+const params = new URLSearchParams(window.location.search);
+const initQ = params.get('q');
+if (initQ) { document.getElementById('q').value = initQ; doSearch(); }
+if (params.get('limit')) document.getElementById('limit').value = params.get('limit');
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+{% endblock %}

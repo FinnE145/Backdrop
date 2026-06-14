@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Backdrop — Match{% endblock %}
+{% block heading %}Find Similar{% endblock %}
+
+{% block controls %}
+<input id="hash" type="text" placeholder="image hash" size="70">
+<input id="limit" type="number" value="20" min="1" max="200">
+<button onclick="doSearch()">Find Similar</button>
+<button onclick="toCleanup()">Switch to Cleanup Mode</button>
+{% endblock %}
+
+{% block page_scripts %}
+async function doSearch() {
+    const hash = document.getElementById('hash').value.trim();
+    const limit = document.getElementById('limit').value;
+    if (!hash) return;
+    if (hash.length < 15 || hash.includes(' ')) {
+        window.location.href = '/search?q=' + encodeURIComponent(hash) + '&limit=' + limit;
+        return;
+    }
+    document.getElementById('status').textContent = 'Searching...';
+    document.getElementById('results').innerHTML = '';
+    const r = await fetch('/api/match?hash=' + encodeURIComponent(hash) + '&limit=' + limit);
+    const data = await r.json();
+    if (data.error) {
+        const a = document.createElement('a');
+        a.href = '/search?q=' + encodeURIComponent(hash) + '&limit=' + limit;
+        a.textContent = 'search instead...';
+        const status = document.getElementById('status');
+        status.textContent = 'Not found. ';
+        status.appendChild(a);
+        return;
+    }
+    document.getElementById('status').textContent = data.results.length + ' results';
+    for (const item of data.results)
+        document.getElementById('results').appendChild(makeCard(item));
+}
+
+function toCleanup() {
+    const hash = document.getElementById('hash').value.trim();
+    const limit = document.getElementById('limit').value;
+    window.location.href = '/cleanup?hash=' + encodeURIComponent(hash) + '&limit=' + limit;
+}
+
+const params = new URLSearchParams(window.location.search);
+const h = params.get('hash');
+if (h) { document.getElementById('hash').value = h; doSearch(); }
+document.getElementById('hash').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+{% endblock %}
