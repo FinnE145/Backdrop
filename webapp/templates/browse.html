@@ -18,6 +18,7 @@ async function doBrowse() {
     document.getElementById('status').textContent = data.results.length + ' results';
     for (const item of data.results)
         document.getElementById('results').appendChild(makeCard(item));
+    filterResults();
 }
 
 doBrowse();

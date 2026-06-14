@@ -66,15 +66,19 @@ def create_app(config: dict):
         _conn().commit()
         return jsonify({"job_id": cur.lastrowid}), 202
 
-    def _fetch_names(top_hashes):
+    def _fetch_meta(top_hashes):
         if not top_hashes:
             return {}
         placeholders = ",".join("?" * len(top_hashes))
         rows = _conn().execute(
-            f"SELECT hash, orig_filename FROM photos WHERE hash IN ({placeholders})",
+            f"SELECT hash, orig_filename, width, height, aesthetic_score"
+            f" FROM photos WHERE hash IN ({placeholders})",
             top_hashes,
         ).fetchall()
-        return {row[0]: row[1] for row in rows}
+        return {
+            row[0]: {"orig_filename": row[1], "width": row[2], "height": row[3], "aesthetic_score": row[4]}
+            for row in rows
+        }
 
     @app.get("/api/search")
     def api_search():
@@ -95,11 +99,15 @@ def create_app(config: dict):
         scores = vectors @ query_vec
         top_idx = np.argsort(scores)[::-1][:limit]
         top_hashes = [hashes[i] for i in top_idx]
-        names = _fetch_names(top_hashes)
+        meta = _fetch_meta(top_hashes)
 
         return jsonify({
             "results": [
-                {"hash": hashes[i], "score": float(scores[i]), "orig_filename": names.get(hashes[i])}
+                {
+                    "hash": hashes[i],
+                    "score": float(scores[i]),
+                    **meta.get(hashes[i], {}),
+                }
                 for i in top_idx
             ]
         })
@@ -126,11 +134,15 @@ def create_app(config: dict):
         top_idx = np.argsort(scores)[::-1]
         top_idx = [i for i in top_idx if hashes[i] != hash_][:limit]
         top_hashes = [hashes[i] for i in top_idx]
-        names = _fetch_names(top_hashes)
+        meta = _fetch_meta(top_hashes)
 
         return jsonify({
             "results": [
-                {"hash": hashes[i], "score": float(scores[i]), "orig_filename": names.get(hashes[i])}
+                {
+                    "hash": hashes[i],
+                    "score": float(scores[i]),
+                    **meta.get(hashes[i], {}),
+                }
                 for i in top_idx
             ]
         })
@@ -141,13 +153,14 @@ def create_app(config: dict):
         alpha = float(config.get("browse", {}).get("power", 1.5))
 
         rows = _conn().execute(
-            "SELECT hash, orig_filename, aesthetic_score FROM photos WHERE status='kept' AND aesthetic_score IS NOT NULL"
+            "SELECT hash, orig_filename, aesthetic_score, width, height"
+            " FROM photos WHERE status='kept' AND aesthetic_score IS NOT NULL"
         ).fetchall()
         if not rows:
             return jsonify({"results": []})
 
         hashes = [r[0] for r in rows]
-        names = {r[0]: r[1] for r in rows}
+        meta = {r[0]: {"orig_filename": r[1], "aesthetic_score": r[2], "width": r[3], "height": r[4]} for r in rows}
         scores = [r[2] for r in rows]
 
         min_s = min(scores)
@@ -173,7 +186,7 @@ def create_app(config: dict):
 
         return jsonify({
             "results": [
-                {"hash": hashes[i], "score": float(scores[i]), "orig_filename": names.get(hashes[i])}
+                {"hash": hashes[i], "score": float(scores[i]), **meta[hashes[i]]}
                 for i in picked
             ]
         })

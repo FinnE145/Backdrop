@@ -61,6 +61,7 @@ async function doSearch() {
     document.getElementById('status').textContent = data.results.length + ' results';
     for (const item of data.results)
         document.getElementById('results').appendChild(makeCard(item));
+    filterResults();
 }
 
 async function deleteAll() {

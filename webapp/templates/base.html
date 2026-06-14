@@ -8,6 +8,12 @@
   <a href="/match">Match</a> |
   <a href="/cleanup">Cleanup</a>
 </p>
+<p>
+  Min width: <input id="filter-min-width" type="number" min="0" size="6" oninput="filterResults()">
+  Min height: <input id="filter-min-height" type="number" min="0" size="6" oninput="filterResults()">
+  Min score: <input id="filter-min-score" type="number" step="0.01" size="6" oninput="filterResults()">
+  Max score: <input id="filter-max-score" type="number" step="0.01" size="6" oninput="filterResults()">
+</p>
 <h2>{% block heading %}{% endblock %}</h2>
 {% block controls %}{% endblock %}
 <p id="status"></p>
@@ -17,6 +23,10 @@ function makeCard(item) {
     const wrap = document.createElement('div');
     wrap.style = 'display:flex;flex-direction:column;align-items:center;gap:4px';
     wrap.id = 'wrap-' + item.hash;
+
+    if (item.width)  wrap.dataset.width = item.width;
+    if (item.height) wrap.dataset.height = item.height;
+    if (item.aesthetic_score != null) wrap.dataset.aesthetic = item.aesthetic_score;
 
     const img = document.createElement('img');
     img.src = '/photos/' + item.hash + '?thumbnail=1';
@@ -43,6 +53,22 @@ function makeCard(item) {
     {% endblock %}
 
     return wrap;
+}
+function filterResults() {
+    const minW = parseInt(document.getElementById('filter-min-width').value) || 0;
+    const minH = parseInt(document.getElementById('filter-min-height').value) || 0;
+    const minS = document.getElementById('filter-min-score').value !== ''
+        ? parseFloat(document.getElementById('filter-min-score').value) : -Infinity;
+    const maxS = document.getElementById('filter-max-score').value !== ''
+        ? parseFloat(document.getElementById('filter-max-score').value) : Infinity;
+    for (const card of document.getElementById('results').children) {
+        const w = parseInt(card.dataset.width) || 0;
+        const h = parseInt(card.dataset.height) || 0;
+        const s = card.dataset.aesthetic !== undefined ? parseFloat(card.dataset.aesthetic) : null;
+        const pass = w >= minW && h >= minH
+            && (s === null || (s >= minS && s <= maxS));
+        card.style.display = pass ? '' : 'none';
+    }
 }
 {% block page_scripts %}{% endblock %}
 </script>
