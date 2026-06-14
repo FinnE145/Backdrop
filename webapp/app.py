@@ -71,12 +71,15 @@ def create_app(config: dict):
             return {}
         placeholders = ",".join("?" * len(top_hashes))
         rows = _conn().execute(
-            f"SELECT hash, orig_filename, width, height, aesthetic_score"
+            f"SELECT hash, orig_filename, width, height, aesthetic_score, mean_value, contrast"
             f" FROM photos WHERE hash IN ({placeholders})",
             top_hashes,
         ).fetchall()
         return {
-            row[0]: {"orig_filename": row[1], "width": row[2], "height": row[3], "aesthetic_score": row[4]}
+            row[0]: {
+                "orig_filename": row[1], "width": row[2], "height": row[3],
+                "aesthetic_score": row[4], "mean_value": row[5], "contrast": row[6],
+            }
             for row in rows
         }
 
@@ -153,14 +156,20 @@ def create_app(config: dict):
         alpha = float(config.get("browse", {}).get("power", 1.5))
 
         rows = _conn().execute(
-            "SELECT hash, orig_filename, aesthetic_score, width, height"
+            "SELECT hash, orig_filename, aesthetic_score, width, height, mean_value, contrast"
             " FROM photos WHERE status='kept' AND aesthetic_score IS NOT NULL"
         ).fetchall()
         if not rows:
             return jsonify({"results": []})
 
         hashes = [r[0] for r in rows]
-        meta = {r[0]: {"orig_filename": r[1], "aesthetic_score": r[2], "width": r[3], "height": r[4]} for r in rows}
+        meta = {
+            r[0]: {
+                "orig_filename": r[1], "aesthetic_score": r[2], "width": r[3], "height": r[4],
+                "mean_value": r[5], "contrast": r[6],
+            }
+            for r in rows
+        }
         scores = [r[2] for r in rows]
 
         min_s = min(scores)

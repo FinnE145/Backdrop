@@ -13,6 +13,10 @@
   Min height: <input id="filter-min-height" type="number" min="0" size="6" oninput="filterResults()">
   Min score: <input id="filter-min-score" type="number" step="0.01" size="6" oninput="filterResults()">
   Max score: <input id="filter-max-score" type="number" step="0.01" size="6" oninput="filterResults()">
+  Min value: <input id="filter-min-value" type="number" step="0.01" size="6" oninput="filterResults()">
+  Max value: <input id="filter-max-value" type="number" step="0.01" size="6" oninput="filterResults()">
+  Min contrast: <input id="filter-min-contrast" type="number" step="0.01" size="6" oninput="filterResults()">
+  Max contrast: <input id="filter-max-contrast" type="number" step="0.01" size="6" oninput="filterResults()">
 </p>
 <h2>{% block heading %}{% endblock %}</h2>
 {% block controls %}{% endblock %}
@@ -27,6 +31,8 @@ function makeCard(item) {
     if (item.width)  wrap.dataset.width = item.width;
     if (item.height) wrap.dataset.height = item.height;
     if (item.aesthetic_score != null) wrap.dataset.aesthetic = item.aesthetic_score;
+    if (item.mean_value  != null) wrap.dataset.value    = item.mean_value;
+    if (item.contrast    != null) wrap.dataset.contrast = item.contrast;
 
     const img = document.createElement('img');
     img.src = '/photos/' + item.hash + '?thumbnail=1';
@@ -55,18 +61,34 @@ function makeCard(item) {
     return wrap;
 }
 function filterResults() {
-    const minW = parseInt(document.getElementById('filter-min-width').value) || 0;
-    const minH = parseInt(document.getElementById('filter-min-height').value) || 0;
-    const minS = document.getElementById('filter-min-score').value !== ''
-        ? parseFloat(document.getElementById('filter-min-score').value) : -Infinity;
-    const maxS = document.getElementById('filter-max-score').value !== ''
-        ? parseFloat(document.getElementById('filter-max-score').value) : Infinity;
+    function rangeOf(id) {
+        const el = document.getElementById(id);
+        return el.value !== '' ? parseFloat(el.value) : null;
+    }
+    const minW  = parseInt(document.getElementById('filter-min-width').value) || 0;
+    const minH  = parseInt(document.getElementById('filter-min-height').value) || 0;
+    const minS  = rangeOf('filter-min-score');
+    const maxS  = rangeOf('filter-max-score');
+    const minV  = rangeOf('filter-min-value');
+    const maxV  = rangeOf('filter-max-value');
+    const minC  = rangeOf('filter-min-contrast');
+    const maxC  = rangeOf('filter-max-contrast');
+    function inRange(val, lo, hi) {
+        if (val === null) return true;
+        if (lo !== null && val < lo) return false;
+        if (hi !== null && val > hi) return false;
+        return true;
+    }
     for (const card of document.getElementById('results').children) {
         const w = parseInt(card.dataset.width) || 0;
         const h = parseInt(card.dataset.height) || 0;
         const s = card.dataset.aesthetic !== undefined ? parseFloat(card.dataset.aesthetic) : null;
+        const v = card.dataset.value    !== undefined ? parseFloat(card.dataset.value)    : null;
+        const c = card.dataset.contrast !== undefined ? parseFloat(card.dataset.contrast) : null;
         const pass = w >= minW && h >= minH
-            && (s === null || (s >= minS && s <= maxS));
+            && inRange(s, minS, maxS)
+            && inRange(v, minV, maxV)
+            && inRange(c, minC, maxC);
         card.style.display = pass ? '' : 'none';
     }
 }
