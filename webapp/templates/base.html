@@ -8,6 +8,9 @@
   <a href="/match">Match</a> |
   <a href="/cleanup">Cleanup</a>
 </p>
+<h2>{% block heading %}{% endblock %}</h2>
+{% block controls %}{% endblock %}
+<hr>
 <p>
   Min width: <input id="filter-min-width" type="number" min="0" size="6" oninput="filterResults()">
   Min height: <input id="filter-min-height" type="number" min="0" size="6" oninput="filterResults()">
@@ -18,8 +21,6 @@
   Min contrast: <input id="filter-min-contrast" type="number" step="0.01" size="6" oninput="filterResults()">
   Max contrast: <input id="filter-max-contrast" type="number" step="0.01" size="6" oninput="filterResults()">
 </p>
-<h2>{% block heading %}{% endblock %}</h2>
-{% block controls %}{% endblock %}
 <p id="status"></p>
 <div id="results" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
 <script>
@@ -41,6 +42,8 @@ function makeCard(item) {
     img.onclick = () => window.open('/photos/' + item.hash);
     wrap.appendChild(img);
 
+    const btnRow = document.createElement('div');
+    btnRow.style = 'display:flex;gap:4px';
     {% block card_buttons %}
     const removeBtn = document.createElement('button');
     removeBtn.textContent = 'Remove';
@@ -50,13 +53,14 @@ function makeCard(item) {
         if (res.ok) document.getElementById('wrap-' + item.hash).remove();
         else alert('Failed to remove');
     };
-    wrap.appendChild(removeBtn);
+    btnRow.appendChild(removeBtn);
 
     const simBtn = document.createElement('button');
     simBtn.textContent = 'Similar...';
     simBtn.onclick = () => window.location.href = '/match?hash=' + item.hash;
-    wrap.appendChild(simBtn);
+    btnRow.appendChild(simBtn);
     {% endblock %}
+    wrap.appendChild(btnRow);
 
     return wrap;
 }
