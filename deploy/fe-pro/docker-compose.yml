@@ -13,6 +13,8 @@ x-backdrop: &backdrop
   # svc services shouldn't read. It owns /srv/stacks/backdrop/data.
   user: "2008:2008"
   read_only: true
+  # a tiny init as PID 1: Python as PID 1 ignores SIGTERM, so `docker stop` waited 10 s and then killed it
+  init: true
   tmpfs: [/tmp]
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
