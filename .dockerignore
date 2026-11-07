@@ -1,0 +1,13 @@
+.git
+.venv
+.claude
+**/__pycache__
+images
+thumbnails
+models
+staging
+local
+client
+*.db
+*.db-*
+config.json

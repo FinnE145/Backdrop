@@ -1,0 +1,53 @@
+# Backdrop on fe-pro (see /srv/fe-pro/SERVER.md, "backdrop"). Run from /srv/stacks/backdrop/repo/deploy/fe-pro:
+#   docker compose up -d --build
+# Tailnet only: https://backdrop.fmje.dev (Caddy, tailnet-only bind) and http://fe-pro.tail78f5ec.ts.net:45640 for the
+# Mac client, which builds its URL as http://host:port. There is no login; Tailscale is the boundary.
+#
+# The data directory is mounted at its own host path, not /data: the database stores absolute paths (photos.stored_path)
+# and the client sends the absolute staging path it rsynced to, so the paths inside and outside must be the same.
+name: backdrop
+
+x-backdrop: &backdrop
+  image: backdrop
+  # backdrop (2008), Backdrop's own account (SERVER.md, "Accounts"): the photo library is Finn's own, which the other
+  # svc services shouldn't read. It owns /srv/stacks/backdrop/data.
+  user: "2008:2008"
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  volumes:
+    - /srv/stacks/backdrop/config.json:/app/config.json:ro
+    - /srv/stacks/backdrop/data:/srv/stacks/backdrop/data
+  restart: unless-stopped
+
+services:
+  web:
+    <<: *backdrop
+    build: { context: ../.., dockerfile: deploy/fe-pro/Dockerfile }
+    container_name: backdrop-web
+    command: ["python3", "webapp/app.py"]
+    ports:
+      # Loopback, for Caddy (backdrop.fmje.dev). Never 0.0.0.0.
+      - "127.0.0.1:45640:45640"
+      # The tailnet IP, for the Mac client. Lost if tailscale0 has no address when Docker starts the container;
+      # recreate it then (same as settlers, SERVER.md).
+      - "100.64.132.111:45640:45640"
+    networks:
+      default:
+        ipv4_address: 172.31.72.10
+
+  worker:
+    <<: *backdrop
+    pull_policy: never
+    container_name: backdrop-worker
+    command: ["python3", "worker/importer.py"]
+    # It only reads and writes the data directory.
+    network_mode: none
+    depends_on: [web]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.72.0/24
